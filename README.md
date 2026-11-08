@@ -1,16 +1,12 @@
 # GigBridge
 
-GigBridge is a cash-flow monitoring and recovery planning project for
-freelancers. The backend currently includes the Phase 1 foundation and Phase 2
-database models, migrations, JWT authentication, and workspace access control.
-Forecasting, recovery plans, and PayPal actions are not implemented yet.
+GigBridge is a cash-flow monitoring backend for freelancers. This phase adds a
+PayPal Sandbox Reporting API adapter and a PostgreSQL transaction ledger. It
+does not execute payments, forecast balances, or generate AI recovery plans.
 
-## Backend setup
+## Local setup
 
-Requirements: Python 3.12 and a PostgreSQL database.
-
-From the repository root, create and activate a virtual environment, then
-install the backend dependencies:
+Requirements: Python 3.12 and PostgreSQL.
 
 ```bash
 cd backend
@@ -21,42 +17,37 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-Edit `backend/.env` and set `DATABASE_URL` to your PostgreSQL connection string,
-`FRONTEND_URL` to the frontend origin, and `JWT_SECRET_KEY` to a private random
-value of at least 32 characters. `JWT_ALGORITHM` defaults to `HS256` and
-`ACCESS_TOKEN_EXPIRE_MINUTES` defaults to `30`. The API requires these settings;
-the example values are placeholders. Do not commit `.env`.
+Set `DATABASE_URL` to a PostgreSQL `postgresql+asyncpg://...` URL and
+`JWT_SECRET_KEY` to a private random value of at least 32 characters. Configure
+`FRONTEND_URL` for CORS. `.env` is ignored by Git and must not be committed.
 
-Create the schema from `backend/`:
+Set `PAYPAL_MODE=demo` to use deterministic, explicitly labeled demo ledger
+rows without contacting PayPal. For Sandbox API calls, set
+`PAYPAL_MODE=sandbox`, then set `PAYPAL_CLIENT_ID` and
+`PAYPAL_CLIENT_SECRET` from a PayPal Sandbox REST app. The app OAuth token alone
+does not connect a user merchant account: reporting access requires the needed
+PayPal permission, and real sync also requires a verified merchant connection
+record. PayPal documents transaction and balance APIs and their distinct OAuth
+scopes; transaction reporting may require partner approval ([transaction
+search documentation](https://developer.paypal.com/api/transaction-search/v1/),
+[OAuth documentation](https://developer.paypal.com/api/rest/authentication/)).
+
+Apply migrations from `backend/` after verifying the configured local database:
 
 ```bash
 alembic upgrade head
 ```
 
-The initial revision creates `users`, `workspaces`, and `workspace_members`.
-See [docs/architecture.md](docs/architecture.md) for columns, relationships,
-migration commands, authentication behavior, and API examples.
-
-Run the API from `backend/`:
+Run the application from `backend/`:
 
 ```bash
 uvicorn app.main:app --reload
 ```
 
-The API listens at `http://127.0.0.1:8000`. Swagger UI is at `/docs`, liveness
-is at `/health/live`, and readiness (which checks PostgreSQL) is at
-`/health/ready`.
+The API listens on `http://127.0.0.1:8000`; Swagger UI is `/docs`. Run tests
+from `backend/` with `pytest`. Tests use a fresh SQLite database with foreign
+keys enabled and mocked PayPal HTTP responses; they do not use development data
+or real PayPal credentials.
 
-Authentication endpoints are under `/api/v1/auth`: `POST /register`,
-`POST /login`, and authenticated `GET /me`. Workspace endpoints are
-`GET /api/v1/workspaces`, `GET /api/v1/workspaces/{workspace_id}`, and owner-only
-`PATCH /api/v1/workspaces/{workspace_id}`. Send JWTs as
-`Authorization: Bearer <access_token>`.
-
-Run tests from `backend/` with:
-
-```bash
-pytest
-```
-
-See [docs/architecture.md](docs/architecture.md) for the backend structure.
+See [docs/architecture.md](docs/architecture.md) for table relationships,
+migration history, endpoint contracts, sync behavior, and known limitations.

@@ -11,6 +11,7 @@ from app.db.base import Base
 
 if TYPE_CHECKING:
     from app.models.user import User
+    from app.models.paypal import PayPalConnection
 
 
 class Workspace(Base):
@@ -35,6 +36,9 @@ class Workspace(Base):
     owner: Mapped["User"] = relationship(back_populates="owned_workspaces")
     members: Mapped[list["WorkspaceMember"]] = relationship(
         back_populates="workspace", cascade="all, delete-orphan", passive_deletes=True
+    )
+    paypal_connection: Mapped["PayPalConnection | None"] = relationship(
+        back_populates="workspace", cascade="all, delete-orphan", uselist=False
     )
 
 

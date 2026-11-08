@@ -18,6 +18,8 @@ from app.core.config import get_settings
 from app.core.logging import configure_logging
 from app.db.session import engine
 from app.middleware.request_id import RequestIdFilter, RequestIdMiddleware
+from app.integrations.paypal.client import PayPalAPIClient
+from app.integrations.paypal.exceptions import PayPalError
 
 settings = get_settings()
 configure_logging(settings.log_level)
@@ -44,10 +46,12 @@ async def check_database_ready() -> None:
 
 
 @asynccontextmanager
-async def lifespan(_: FastAPI):
-    """Release the shared database pool when the app shuts down."""
+async def lifespan(application: FastAPI):
+    """Create shared outbound client and release process pools on shutdown."""
 
+    application.state.paypal_client = PayPalAPIClient(settings)
     yield
+    await application.state.paypal_client.close()
     await engine.dispose()
 
 
@@ -104,6 +108,29 @@ def create_app() -> FastAPI:
             status_code=500,
             content=error_payload(request, "INTERNAL_SERVER_ERROR", "An unexpected error occurred."),
         )
+
+    @application.exception_handler(PayPalError)
+    async def paypal_error_handler(request: Request, exc: PayPalError) -> JSONResponse:
+        from app.integrations.paypal.exceptions import (
+            PayPalAuthenticationError, PayPalConfigurationError, PayPalPermissionError,
+            PayPalRateLimitError, PayPalTimeoutError, PayPalUnavailableError,
+        )
+
+        if isinstance(exc, PayPalConfigurationError):
+            status_code, code = 503, "PAYPAL_NOT_CONFIGURED"
+        elif isinstance(exc, PayPalAuthenticationError):
+            status_code, code = 502, "PAYPAL_AUTHENTICATION_FAILED"
+        elif isinstance(exc, PayPalPermissionError):
+            status_code, code = 403, "PAYPAL_PERMISSION_UNAVAILABLE"
+        elif isinstance(exc, PayPalRateLimitError):
+            status_code, code = 429, "PAYPAL_RATE_LIMITED"
+        elif isinstance(exc, PayPalTimeoutError):
+            status_code, code = 504, "PAYPAL_TIMEOUT"
+        elif isinstance(exc, PayPalUnavailableError):
+            status_code, code = 503, "PAYPAL_UNAVAILABLE"
+        else:
+            status_code, code = 502, "PAYPAL_API_ERROR"
+        return JSONResponse(status_code=status_code, content=error_payload(request, code, str(exc)))
 
     @application.get("/api/v1", include_in_schema=False)
     async def api_root() -> Response:
